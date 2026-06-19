@@ -8,19 +8,22 @@
 #SBATCH --mem=16G
 #SBATCH --time=12:00:00
 #SBATCH --array=0-0
-#SBATCH --output=/home/td62/EoS_project/compressibility_scan/logs/compressibility_%A_%a.out
-#SBATCH --error=/home/td62/EoS_project/compressibility_scan/logs/compressibility_%A_%a.err
+#SBATCH --output=logs/compressibility_%A_%a.out
+#SBATCH --error=logs/compressibility_%A_%a.err
 
 set -euo pipefail
 
+# Submit this with `sbatch` FROM INSIDE the repo clone. Every path derives from the
+# submit directory, so the script is not tied to any fixed location.
+# One-time setup in the clone before the first submit:  mkdir -p logs
+REPO_DIR="${SLURM_SUBMIT_DIR:-$PWD}"
+
 # ── Initial-condition array ───────────────────────────────────────────────────
-# The Hamiltonian disorder is FIXED (H_SEED in product_states.jl). Each array task
-# is a different initial condition (product state). List one LABEL per chosen IC;
-# each must have a params file at:
-#   $SCRIPTS_DIR/params/params_L12_seed${H_SEED}_${LABEL}.csv   (H_SEED = 42)
-# Set --array above to 0-(N-1) for N labels.
+# Hamiltonian disorder is FIXED (H_SEED in product_states.jl). Each array task is
+# one initial condition; list one LABEL per IC and set --array=0-(N-1).
+# Each LABEL needs params/params_L12_seed42_${LABEL}.csv in the repo.
 LABELS=(
-    cool_01
+    ps188_sweepmin
 )
 LABEL=${LABELS[$SLURM_ARRAY_TASK_ID]}
 PARAMS_REL="params/params_L12_seed42_${LABEL}.csv"
@@ -29,27 +32,24 @@ PARAMS_REL="params/params_L12_seed42_${LABEL}.csv"
 echo "Node: $SLURM_NODELIST"
 echo "Job ID: $SLURM_JOB_ID"
 echo "Array Task ID: $SLURM_ARRAY_TASK_ID"
+echo "Repo: $REPO_DIR"
 echo "Label: $LABEL"
 
-BASE_DIR="$HOME/EoS_project/compressibility_scan"
-SCRIPTS_DIR="$BASE_DIR/scripts"
-RUN_DIR="$SHARED_SCRATCH/td62/compressibility_${SLURM_JOB_ID}_${LABEL}"
-
-mkdir -p "$BASE_DIR/logs"
-mkdir -p "$RUN_DIR"
+RUN_DIR="$SHARED_SCRATCH/$USER/compressibility_${SLURM_JOB_ID}_${LABEL}"
 mkdir -p "$RUN_DIR/results"
+mkdir -p "$REPO_DIR/results"
 
-cp "$SCRIPTS_DIR"/hilbert.jl               "$RUN_DIR"/
-cp "$SCRIPTS_DIR"/gates.jl                "$RUN_DIR"/
-cp "$SCRIPTS_DIR"/observable.jl           "$RUN_DIR"/
-cp "$SCRIPTS_DIR"/compressibility_scan.jl "$RUN_DIR"/
-cp "$SCRIPTS_DIR"/product_states.jl       "$RUN_DIR"/
-cp "$SCRIPTS_DIR"/Project.toml            "$RUN_DIR"/
-cp "$SCRIPTS_DIR"/Manifest.toml           "$RUN_DIR"/
+cp "$REPO_DIR"/hilbert.jl               "$RUN_DIR"/
+cp "$REPO_DIR"/gates.jl                 "$RUN_DIR"/
+cp "$REPO_DIR"/observable.jl            "$RUN_DIR"/
+cp "$REPO_DIR"/compressibility_scan.jl  "$RUN_DIR"/
+cp "$REPO_DIR"/product_states.jl        "$RUN_DIR"/
+cp "$REPO_DIR"/Project.toml             "$RUN_DIR"/
+cp "$REPO_DIR"/Manifest.toml            "$RUN_DIR"/
 
-# Stage the initial-condition params file for this label.
+# Stage the initial-condition params file.
 mkdir -p "$RUN_DIR/params"
-SRC_PARAMS="$SCRIPTS_DIR/$PARAMS_REL"
+SRC_PARAMS="$REPO_DIR/$PARAMS_REL"
 if [[ ! -f "$SRC_PARAMS" ]]; then
     echo "ERROR: params file not found: $SRC_PARAMS" >&2
     exit 1
@@ -69,10 +69,8 @@ julia --version
 echo "JULIA_NUM_THREADS=$JULIA_NUM_THREADS"
 
 cd "$RUN_DIR"
-
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
-
 srun julia --project=. compressibility_scan.jl "$PARAMS_REL"
 
-cp -r "$RUN_DIR/results/." "$BASE_DIR/results/"
-echo "Results copied to: $BASE_DIR/results/"
+cp -r "$RUN_DIR/results/." "$REPO_DIR/results/"
+echo "Results copied to: $REPO_DIR/results/"
