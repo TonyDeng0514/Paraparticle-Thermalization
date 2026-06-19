@@ -8,6 +8,9 @@ archived/
 *.pdf
 *.nb
 
+# Jupyter notebooks — analysis stays on the laptop, not on git / the cluster
+*.ipynb
+
 # OS / tooling
 .DS_Store
 .claude/
