@@ -25,7 +25,7 @@ probe.
 The central comparison is two-way:
 
 - **κ_true** — the local compressibility of the *integrable canonical (fixed-N
-  Gibbs)* state, constructed **directly** as `e^{−βH}/Z` at the matched inverse
+  Gibbs)* state, constructed **directly** as $e^{−βH}/Z$ at the matched inverse
   temperature β. This is the **thermalization target**: where a genuinely thermal
   state must land. Computed exactly by the integrable pipeline
   (`integrable_thermal_at_beta`: orbital occupations → site densities;
