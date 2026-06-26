@@ -22,27 +22,24 @@ Hamiltonian `H_pert`, and ask what equilibrium it relaxes to. The diagnostic is 
 local **compressibility** `κ = ∂n/∂μ` extracted by a linear-density-gradient (LDA)
 probe.
 
-The central comparison is three-way:
+The central comparison is two-way:
 
-- **κ_canon** — the local compressibility of the *integrable canonical (fixed-N
-  Gibbs)* state at the matched inverse temperature β. This is the **thermalization
-  target**: where a genuinely thermal state must land. Computed exactly by the
-  integrable pipeline (`wannier_stark_integrable.jl`).
+- **κ_true** — the local compressibility of the *integrable canonical (fixed-N
+  Gibbs)* state, constructed **directly** as `e^{−βH}/Z` at the matched inverse
+  temperature β. This is the **thermalization target**: where a genuinely thermal
+  state must land. Computed exactly by the integrable pipeline
+  (`integrable_thermal_at_beta`: orbital occupations → site densities;
+  `connected_corr_n_integrable`: → κ via the first-moment route, in
+  `wannier_stark_integrable.jl`). It is a directly-constructed canonical object,
+  **not** a diagonal-ensemble or any time-averaged object.
 - **κ_pert** — the compressibility *measured* from the perturbed TEBD-thermalized
-  state.
-- **κ_GGE** — the compressibility of the integrable *diagonal ensemble* (a
-  generalized Gibbs ensemble). This is the **foil**: an integrable system that
-  fails to thermalize would sit here, not at κ_canon.
+  state at its KMS-extracted β.
 
-The claim the pipeline is built to support: **κ_pert lands on κ_canon and away from
-κ_GGE** — i.e. the integrability-breaking perturbations restore ordinary thermal
-(ETH) behavior.
-
-> **Note / gap:** the *canonical* target κ_canon is implemented and validated.
-> The *GGE foil* κ_GGE is the conceptual contrast and is **not yet computed as a
-> separate object in the repo** — it is the diagonal-ensemble counterpart of the
-> integrable state. Treat κ_GGE as a planned comparison object. *(RATIONALE per
-> handoff history; confirm the GGE construction with Tony before claiming it.)*
+The claim the pipeline is built to support: thermalization is confirmed when
+**κ_pert — measured from the perturbed TEBD state at its KMS-extracted β — lands on
+κ_true, the directly-constructed integrable canonical κ at that same β** — i.e. the
+integrability-breaking perturbations restore ordinary thermal (ETH) behavior. Two
+objects, matched β, no foil.
 
 The comparison is enforced **at matched β, never matched E0** (see §3 and
 `CLAUDE.md` INV-1).
@@ -150,9 +147,12 @@ line), `H_int` exhibits exact spin–charge separation:
   (`single_particle_matrix` in `wannier_stark_integrable.jl`). The charge sector is
   **spinless free fermions**.
 - **Flavor sector.** Every charge configuration carries a degeneracy
-  `g = C(N, N↑) = N!/(N↑! N↓!)`, **independent of β** — a pure entropy/free-energy
-  shift `ln g` that cancels in every energy expectation and every density. By the
-  A↔B symmetry of `H_int` the per-site flavor split is exactly 1/2 each.
+  `g = m^N = 2^N` (m = 2), **independent of β**. Only total N is conserved
+  (`H_Ω`/FlipAB breaks N↑ conservation), so the flavor label is summed freely over
+  all N particles → `m^N` degenerate configurations by spin–charge separation. This
+  is a pure entropy/free-energy shift `ln g = N·ln 2` that cancels in every energy
+  expectation and every density. By the A↔B symmetry of `H_int` the per-site flavor
+  split is exactly 1/2 each.
 
 **Consequence (used everywhere downstream):** the single-β fixed-N canonical state
 in the total-N sector reduces to the **spinless free-fermion fixed-N canonical
@@ -525,8 +525,7 @@ a temperature mislabel.
 - The **paraparticle fingerprint** `C^m_{i,i+1}`: integrable ≈0 off-diagonal
   (diagonal flavor sector, §3.4) vs perturbed nonzero if `V·Mloc Mloc` has generated
   flavor correlations — the "not spinless fermions" evidence.
-- The full **κ_pert vs κ_canon vs κ_GGE** overlay (§1), incl. the GGE foil
-  construction (flagged as not-yet-in-repo).
+- The full **κ_pert vs κ_true** overlay (§1) at matched β.
 
 ---
 
@@ -540,7 +539,7 @@ a temperature mislabel.
 | `β` | inverse temperature; **can be negative** (population-inverted on a bounded band) |
 | `κ` | local compressibility ∂n/∂μ = β⟨ΔN²⟩; **sign(κ)=sign(β)** |
 | `κ/β` | the ensemble-invariant comparison quantity; finite-N value 8/33 at ν=2/3 |
-| `κ_canon / κ_GGE / κ_pert` | integrable canonical (target) / integrable diagonal-ensemble (foil) / perturbed measured |
+| `κ_true / κ_pert` | integrable canonical (directly-constructed target) / perturbed measured at KMS β |
 | `H_int, H_pert` | integrable (flavor-blind hop + tilt) and perturbed (+V,Ω,q) Hamiltonians |
 | `W, H_SEED` | disorder strength (0.2) and fixed disorder seed (42) |
 | `Nloc, Mloc` | local density (Na+Nb) and magnetization (Na−Nb) operators |
@@ -550,7 +549,7 @@ a temperature mislabel.
 | `S(ω)` | dynamical structure factor of M; KMS: S(ω)/S(−ω)=e^{βω} |
 | `χ` | MPS bond dimension (maxdim 1024) — also susceptibility in the retired FDT route (context-dependent) |
 | `T_max, T_therm` | correlator evolution time / thermalization time |
-| `g = C(N,N↑)` | flat flavor-sector multiplicity (β-independent) |
+| `g = m^N = 2^N` | flat flavor-sector multiplicity (β-independent; m = 2) |
 
 ---
 
