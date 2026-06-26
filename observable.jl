@@ -1,3 +1,17 @@
+"""
+    connected_corr(psi, opname) -> C
+
+Connected equal-time correlator C_ij = ⟨O_i O_j⟩ − ⟨O_i⟩⟨O_j⟩ for the on-site
+operator `opname` on the MPS `psi`. Use `"Nloc"` for the charge correlator C^n
+and `"Mloc"` for the magnetization correlator C^m. Real and symmetric for the
+Hermitian density/magnetization operators.
+"""
+function connected_corr(psi, opname)
+    C = correlation_matrix(psi, opname, opname)
+    e = expect(psi, opname)
+    return C .- e * e'
+end
+
 function build_hamiltonian_mpo(sites, t_hop, Ω, V, q; α=0.0)
     L = length(sites)
     os = OpSum()

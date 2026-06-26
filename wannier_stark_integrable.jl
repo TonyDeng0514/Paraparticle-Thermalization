@@ -107,6 +107,17 @@ function esp(x::AbstractVector{<:Real}, K::Int)
 end
 
 """
+    shifted_fugacities(ε, β) -> x_a = e^{-β(ε_a - mean ε)}
+
+The fugacities entering the fixed-N occupations, after the invariant mean shift
+ε → ε − ⟨ε⟩ (occupations are unchanged by it because numerator and denominator
+both scale by e^{Nβc}). Factored out so the dynamic-range acceptance test (C1.1)
+exercises exactly the array used inside `orbital_occupations`.
+"""
+shifted_fugacities(ε::AbstractVector{Float64}, β::Float64) =
+    exp.(-β .* (ε .- sum(ε) / length(ε)))
+
+"""
     orbital_occupations(ε, N, β) -> ⟨n_a⟩_N
 
 Fixed-N canonical occupations ⟨n_a⟩_N = x_a·e_{N-1}(x∖x_a)/e_N(x), with
@@ -117,8 +128,7 @@ excluding a — never the subtractive leave-one-out recursion.
 """
 function orbital_occupations(ε::AbstractVector{Float64}, N::Int, β::Float64)
     L = length(ε)
-    εshift = ε .- (sum(ε) / L)          # invariant shift; keep x_a ~ O(1)
-    x = exp.(-β .* εshift)
+    x = shifted_fugacities(ε, β)        # invariant shift; keep x_a ~ O(1)
     eN = esp(x, N)[N + 1]               # e_N over all orbitals
     n = zeros(Float64, L)
     for a in 1:L
@@ -129,19 +139,36 @@ function orbital_occupations(ε::AbstractVector{Float64}, N::Int, β::Float64)
     return n
 end
 
-# physical thermal energy uses the ORIGINAL (unshifted) ε
-thermal_energy(ε, N, β) = sum(ε .* orbital_occupations(ε, N, β))
+"""
+    integrable_thermal_at_beta(L, t, α, β, N) -> (; ε, ψ, n_orb, n_tot, E, n_A, n_B)
+
+Forward map β → integrable canonical thermal state. Diagonalizes the L×L
+single-particle Wannier-Stark matrix, fills the orbitals at fixed N via the
+cancellation-free `orbital_occupations`, rotates to sites, and splits the flavor
+sector 1/2–1/2 (exact A↔B symmetry). `E = Σ_a ε_a ⟨n_a⟩_N` uses the ORIGINAL
+(unshifted) ε. This is the single code path for the thermal energy: `solve_beta`
+bisects on `integrable_thermal_at_beta(...).E - E0`.
+"""
+function integrable_thermal_at_beta(L::Int, t::Float64, α::Float64, β::Float64, N::Int)
+    h = single_particle_matrix(L, t, α)
+    F = eigen(h); ε = F.values; ψ = F.vectors
+    n_orb = orbital_occupations(ε, N, β)
+    n_tot = (ψ .^ 2) * n_orb
+    E     = sum(ε .* n_orb)
+    return (; ε, ψ, n_orb, n_tot, E, n_A = 0.5 .* n_tot, n_B = 0.5 .* n_tot)
+end
 
 """
-    solve_beta(ε, N, E0) -> β
+    solve_beta(L, t, α, N, E0) -> β
 
-Bisection for the unique β with ⟨H⟩_β = E0. d⟨H⟩/dβ = −Var(H) ≤ 0, so ⟨H⟩ is
+Bisection for the unique β with ⟨H⟩_β = E0, evaluating ⟨H⟩ through
+`integrable_thermal_at_beta` (one code path). d⟨H⟩/dβ = −Var(H) ≤ 0, so ⟨H⟩ is
 monotone decreasing in β and the root is unique. The bracket straddles zero and
 allows β < 0 (physical here: the band is bounded, so negative temperature is
 real and E0 > E_mid ⇒ β < 0).
 """
-function solve_beta(ε::AbstractVector{Float64}, N::Int, E0::Float64)
-    f(β) = thermal_energy(ε, N, β) - E0
+function solve_beta(L::Int, t::Float64, α::Float64, N::Int, E0::Float64)
+    f(β) = integrable_thermal_at_beta(L, t, α, β, N).E - E0
     βlo, βhi = -1.0, 1.0
     flo, fhi = f(βlo), f(βhi)           # β→−∞ ⇒ E_max (f>0); β→+∞ ⇒ E_min (f<0)
     k = 0
@@ -164,6 +191,79 @@ function solve_beta(ε::AbstractVector{Float64}, N::Int, E0::Float64)
         end
     end
     return 0.5 * (βlo + βhi)
+end
+
+# ── Connected correlators on the integrable thermal state ─────────────────────
+
+"""
+    orbital_pair_occupations(ε, N, β) -> (NN, n)
+
+Exact fixed-N canonical two-orbital occupations `NN[a,b] = ⟨N_a N_b⟩_N` and the
+single occupations `n[a] = ⟨N_a⟩_N`. Diagonal: `⟨N_a²⟩ = ⟨N_a⟩` (fermion). For
+a≠b: `⟨N_a N_b⟩_N = x_a x_b e_{N-2}(x ∖ {a,b}) / e_N(x)`, built cancellation-free
+by rebuilding the product polynomial over the L−2 orbitals excluding a and b.
+"""
+function orbital_pair_occupations(ε::AbstractVector{Float64}, N::Int, β::Float64)
+    L  = length(ε)
+    x  = shifted_fugacities(ε, β)
+    eN = esp(x, N)[N + 1]
+    n  = orbital_occupations(ε, N, β)
+    NN = zeros(Float64, L, L)
+    for a in 1:L
+        NN[a, a] = n[a]
+        for b in (a + 1):L
+            xs = x[setdiff(1:L, (a, b))]
+            eNm2 = N >= 2 ? esp(xs, N - 2)[N - 1] : 0.0   # e_{N-2}(x ∖ {a,b})
+            v = x[a] * x[b] * eNm2 / eN
+            NN[a, b] = NN[b, a] = v
+        end
+    end
+    return NN, n
+end
+
+"""
+    connected_corr_n_integrable(L, t, α, β, N) -> C^n
+
+Exact fixed-N canonical charge correlator `C^n_ij = ⟨δn_i δn_j⟩`. Because the
+canonical density matrix is diagonal in the orbital-occupation basis, only
+number-conserving operator pairs survive, giving two contributions:
+
+  C^n_ij = Σ_{a,b} φ_a(i)² φ_b(j)² Cov_ab                              (direct)
+         + Σ_{a≠b} φ_a(i)φ_b(i)φ_a(j)φ_b(j) [n_a(1−n_b) − Cov_ab]      (exchange)
+
+with `Cov_ab = ⟨N_a N_b⟩_N − n_a n_b`. The off-diagonal canonical covariance
+(Cov_ab, a≠b) is the fixed-N correction the naive grand-canonical Wick form
+`δ_ij n_i − |ρ_ij|²` omits; it enforces the exact sum rule Σ_j C^n_ij = 0
+(total particle number does not fluctuate).
+"""
+function connected_corr_n_integrable(L::Int, t::Float64, α::Float64, β::Float64, N::Int)
+    F = eigen(single_particle_matrix(L, t, α)); ε = F.values; ψ = F.vectors
+    NN, n = orbital_pair_occupations(ε, N, β)
+    Cov = NN .- n * n'
+    P   = ψ .^ 2                                   # P[i,a] = φ_a(i)²
+    Cn  = P * Cov * P'                             # direct piece
+    W   = n * (1 .- n)' .- Cov                     # W_ab = n_a(1−n_b) − Cov_ab
+    for a in 1:L; W[a, a] = 0.0; end               # exchange excludes a=b
+    ex = zeros(Float64, L, L)
+    for a in 1:L, b in 1:L
+        W[a, b] == 0.0 && continue
+        qa = @view ψ[:, a]; qb = @view ψ[:, b]
+        ex .+= W[a, b] .* (qa * qa') .* (qb * qb')
+    end
+    return Cn .+ ex
+end
+
+"""
+    connected_corr_m_integrable(L, t, α, β, N) -> C^m
+
+Integrable magnetization correlator `C^m_ij = ⟨δm_i δm_j⟩`. The flavor sector is
+maximally mixed (flat, β-independent): each occupied site is an independent free
+±1 spin with ⟨m_i⟩ = 0 and ⟨m_i²⟩ = ⟨n_i⟩ (since m_i² = n_i), and there is no
+inter-site flavor correlation. Hence C^m is diagonal, `C^m_ij = δ_ij ⟨n_i⟩`.
+"""
+function connected_corr_m_integrable(L::Int, t::Float64, α::Float64, β::Float64, N::Int)
+    st = integrable_thermal_at_beta(L, t, α, β, N)
+    return Matrix(Diagonal(st.n_tot))
 end
 
 # ── Driver ───────────────────────────────────────────────────────────────────
@@ -194,21 +294,14 @@ function run()
     @printf("%-6s  %10s  %10s  %12s  %8s  %10s\n",
             "alpha", "E0", "E_mid", "beta", "Σn_i", "Σn_{i,A}")
     for α in α_LIST
-        h = single_particle_matrix(L, T_HOP, α)
-        F = eigen(h)                  # F.values = ε_a, F.vectors columns = φ_a
-        ε = F.values
-        ψ = F.vectors                 # ψ[i,a] = φ_a(i)  (distinct name; no shadowing)
-
         E0    = α * sum(O)
-        E_mid = (N / L) * sum(ε)      # = (N/L)·α·L(L+1)/2
+        E_mid = (N / L) * sum(eigen(single_particle_matrix(L, T_HOP, α)).values)
 
-        β     = solve_beta(ε, N, E0)
-        n_orb = orbital_occupations(ε, N, β)
-        n_tot = (ψ .^ 2) * n_orb      # ⟨n_i⟩ = Σ_a |φ_a(i)|² ⟨n_a⟩_N
-
-        # flavor split: exact 1/2 each by A↔B symmetry of the integrable H
-        n_A = 0.5 .* n_tot
-        n_B = 0.5 .* n_tot
+        β     = solve_beta(L, T_HOP, α, N, E0)
+        st    = integrable_thermal_at_beta(L, T_HOP, α, β, N)
+        n_tot = st.n_tot              # ⟨n_i⟩ = Σ_a |φ_a(i)|² ⟨n_a⟩_N
+        n_A   = st.n_A                # flavor split: exact 1/2 each (A↔B symmetry)
+        n_B   = st.n_B
 
         @printf("%-6.2f  %10.4f  %10.4f  %12.6e  %8.5f  %10.5f\n",
                 α, E0, E_mid, β, sum(n_tot), sum(n_A))
@@ -242,4 +335,8 @@ function run()
     println("Wrote $(length(rows)) rows to $(outfile)")
 end
 
-run()
+# Run only when executed as a script, so this file can be `include`d for reuse
+# (integrable_at_beta.jl, test_component1.jl) without triggering the E0→β scan.
+if abspath(PROGRAM_FILE) == @__FILE__
+    run()
+end

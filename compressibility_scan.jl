@@ -54,12 +54,12 @@ function run_compressibility_scan()
         psi, _ = superposition_product_state(sites, occ, θ_params, φ_params)
 
         n_loc = zeros(Float64, Nsteps + 1, L)
-        # m_loc = zeros(Float64, Nsteps + 1, L)
+        m_loc = zeros(Float64, Nsteps + 1, L)
 
         # n_mid_t   = zeros(Float64, Nsteps + 1)
 
         n_loc[1, :] = expect(psi, "Nloc")
-        # m_loc[1, :] = expect(psi, "Mloc")
+        m_loc[1, :] = expect(psi, "Mloc")
 
         # n_mid_t[1]   = n_loc[1, j_mid]
 
@@ -75,7 +75,7 @@ function run_compressibility_scan()
             normalize!(psi)
 
             n_loc[step + 1, :] = expect(psi, "Nloc")
-            # m_loc[step + 1, :] = expect(psi, "Mloc")
+            m_loc[step + 1, :] = expect(psi, "Mloc")
 
             # n_mid_t[step + 1]   = n_loc[step + 1, j_mid]
 
@@ -100,6 +100,21 @@ function run_compressibility_scan()
             end
         end
         println("Wrote $(length(times)) rows to $(abspath(outfile_profile))")
+
+        # save full magnetization profile m(t, j) (mirrors the density profile)
+        outfile_m = joinpath(outdir, "m_profile_vs_t_L$(L)_chi$(maxdim)_alpha$(α)_seed$(H_SEED)_$(label).csv")
+        open(outfile_m, "w") do io
+            println(io, "# params_file = $(params_file)")
+            println(io, "# E0 = $E0")
+            header = "time," * join(["m_$j" for j in 1:L], ",")
+            println(io, header)
+            for k in eachindex(times)
+                row = @sprintf("%.6f", times[k]) *
+                    "," * join([@sprintf("%.10e", m_loc[k, j]) for j in 1:L], ",")
+                println(io, row)
+            end
+        end
+        println("Wrote $(length(times)) rows to $(abspath(outfile_m))")
     end
 end
 

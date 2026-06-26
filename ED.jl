@@ -7,6 +7,8 @@
 
 using LinearAlgebra, SparseArrays, Random, Printf
 
+include("ed_thermal.jl")   # exact Gibbs-state thermal observables (reused by tests / component 4)
+
 const L    = 10
 const N    = 7
 const Na   = 3      # flavor-A particles; unused in diagonalization, kept for parity
@@ -66,6 +68,11 @@ function sector_occupations(idx, j, L)
     end
 end
 
+# Run the full ETH script only when executed directly; `include("ED.jl")` then
+# exposes the builders (build_hamiltonian_ed, n_sector_indices, sector_occupations)
+# and ed_thermal.jl's Gibbs routines without triggering the heavy diagonalization.
+if abspath(PROGRAM_FILE) == @__FILE__
+
 # ─── disorder (matches compressibility_scan.jl convention) ──────────────────
 Random.seed!(seed)
 Ω = W * randn(L)
@@ -108,3 +115,5 @@ open(outfile, "w") do f
     end
 end
 @printf "Saved %d rows → %s\n" dim_N outfile
+
+end  # if abspath(PROGRAM_FILE) == @__FILE__
