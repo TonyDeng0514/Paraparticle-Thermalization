@@ -18,9 +18,9 @@ include("observable.jl")
 include("product_states.jl")
 
 function run_energy_sweep()
-    L     = 12
-    N     = 8
-    Na    = 4
+    L     = 10
+    N     = 7
+    Na    = 3
     t_hop = 1.0
     W     = 0.2
 
