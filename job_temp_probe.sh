@@ -1,12 +1,11 @@
 #!/bin/bash
 #SBATCH --job-name=temp_probe_Cij
-#SBATCH --account=commons
-#SBATCH --partition=commons
+#SBATCH --partition=long
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --threads-per-core=1
-#SBATCH --mem=32G
-#SBATCH --time=12:00:00
+#SBATCH --mem=8G
+#SBATCH --time=72:00:00
 #SBATCH --array=0-23
 #SBATCH --output=logs/temp_probe_Cij_%A_%a.out
 #SBATCH --error=logs/temp_probe_Cij_%A_%a.err
@@ -17,7 +16,7 @@ set -euo pipefail
 # Runs temp_probe_Cij.jl (thermalize to T_END, then the unequal-time KMS probe of
 # duration T_CORR) for each (alpha, initial-condition) pair. The probe evolves L+1
 # MPS at once (the density sources + the global-M source), so this is the heaviest
-# TEBD job here -- hence cpus-per-task=8 and mem=32G. Hamiltonian disorder is FIXED
+# TEBD job here -- hence cpus-per-task=8 and mem=16G. Hamiltonian disorder is FIXED
 # (H_SEED in product_states.jl).
 REPO_DIR="${SLURM_SUBMIT_DIR:-$PWD}"
 
@@ -44,6 +43,11 @@ echo "Label: $LABEL   alpha: $ALPHA   T_end: $T_END   T_corr: $T_CORR"
 RUN_DIR="$SHARED_SCRATCH/$USER/temp_probe_Cij_${SLURM_JOB_ID}_${LABEL}_alpha${ALPHA}"
 mkdir -p "$RUN_DIR/results"
 mkdir -p "$REPO_DIR/results"
+
+# Copy results back even if the task is killed (wall time / OOM) or errors out.
+# The .jl flushes every step, so whatever is in scratch is valid partial output.
+cleanup() { cp -r "$RUN_DIR/results/." "$REPO_DIR/results/" 2>/dev/null || true; }
+trap cleanup EXIT TERM
 
 cp "$REPO_DIR"/hilbert.jl          "$RUN_DIR"/
 cp "$REPO_DIR"/gates.jl            "$RUN_DIR"/
